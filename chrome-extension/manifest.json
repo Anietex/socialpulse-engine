@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "X Timeline Harvester",
+  "description": "Automatically scrolls the X timeline, extracts posts, and ships them to the companion API.",
+  "version": "1.0.0",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://xbuilder.test/*",
+    "http://localhost:4000/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: twitter-builder-mongodb
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: twitter-builder
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - twitter-builder-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: twitter-builder-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - twitter-builder-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  twitter-builder-network:
+    driver: bridge

@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime artifacts
+cookies/
+playwright-storage.json
+
+# Model files (too large for git)
+*.gguf
+*.safetensors
+*.pth
+*.pt
+llm/models/
+
+# Python virtual environments
+venv/
+__pycache__/
+*.pyc
+
+# Claude Code
+.claude/
+
+# Legacy data directories
+api-old/data/
+
+# Sandbox experiments
+sandbox/node_modules/
