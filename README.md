@@ -1,39 +1,201 @@
-# X Timeline Builder
+# SocialPulse Engine
 
-This workspace contains two cooperating pieces:
+A production-grade social media engagement engine built with Clean Architecture, Domain-Driven Design, and a multi-stage content processing pipeline.
 
-- `chrome-extension` – a Manifest V3 extension that scrolls through a logged in X (formerly Twitter) timeline, extracts newly seen tweets (text, author, injected id, url, timestamp, media, engagement metrics) and forwards them to the backend.
-- `api` – a lightweight Express server that accepts the extracted tweets and keeps them in memory for inspection.
+## Architecture Overview
 
-## Backend API
+```
+Chrome Extension ──► Ingestion API ──► Processing Pipeline ──► Automation Engine
+                         │                    │                       │
+                    Zod Validation      OCR → Captioning →      Playwright
+                    Batch Dedup        Categorize → Rank →     Human-like
+                    MongoDB             Evaluate → Queue       Stealth Actions
+```
 
-1. `cd api`
-2. `npm install`
-3. `npm run dev` (auto-reloads) or `npm start`
+| Layer | Purpose | Key Patterns |
+|-------|---------|-------------|
+| **Core** | Domain types, interfaces, value objects | Value Objects, Commands, Strategy |
+| **Domain** | Entities, repository contracts, domain services | DDD Aggregates, Repository Pattern |
+| **Application** | Orchestration, use cases, service coordination | CQRS-inspired, Dependency Injection |
+| **Infrastructure** | MongoDB, Redis/BullMQ, Playwright, LLM providers | Adapter Pattern, Factory Pattern |
+| **API** | Controllers, routes, validation, DTOs | RESTful, Zod schemas |
+| **Adapters** | Platform-specific implementations (Twitter/X) | Strategy, Template Method |
 
-The server listens on `http://localhost:4000` by default, stores every unique tweet in memory **and** writes them to `api/data/tweets.json`, and exposes:
+## Tech Stack
 
-- `POST /tweets` – accepts `{ "tweets": [ ... ] }` batches from the extension.
-- `GET /tweets` – returns all stored tweets.
-- `GET /health` – simple status endpoint.
+| Category | Technologies |
+|----------|-------------|
+| **Runtime** | Node.js 20+, TypeScript 5, Express 4 |
+| **Database** | MongoDB (Mongoose 8), Redis (ioredis) |
+| **Queue** | BullMQ with dedicated workers per pipeline stage |
+| **AI/ML** | Tesseract.js (OCR), BLIP (image captioning), Groq/OpenRouter LLMs |
+| **Automation** | Playwright with stealth plugins, human behavior simulation |
+| **Auth** | JWT (access + refresh tokens), bcrypt, role-based access |
+| **Observability** | Winston logging, Prometheus metrics (prom-client) |
+| **Validation** | Zod schemas with Express middleware |
+| **Testing** | Jest 29, Supertest, ts-jest (ESM) |
 
-> **Note** In-memory storage is enough for local testing. Wire this to your real datastore if persistence is required.
+## Project Structure
 
-## Chrome Extension
+```
+socialpulse-engine/
+├── api/                              # Main application
+│   ├── src/
+│   │   ├── config/                   # Environment, logger configuration
+│   │   ├── health/                   # Health/readiness/liveness endpoints
+│   │   ├── middleware/               # Auth, validation, rate limiting, error handling
+│   │   ├── observability/            # Prometheus metrics
+│   │   ├── platform/
+│   │   │   ├── core/                 # Domain types, interfaces, value objects
+│   │   │   │   ├── commands/         # Command objects (ScrapeContent, ExecuteAction)
+│   │   │   │   ├── errors/           # Domain-specific error types
+│   │   │   │   ├── interfaces/       # Port definitions (IScraper, IActionExecutor, etc.)
+│   │   │   │   ├── types/            # ContentStatus, ActionType, OCR/Captioning enums
+│   │   │   │   └── value-objects/    # ContentId, PlatformId, Metrics
+│   │   │   ├── domain/              # Business entities and repository contracts
+│   │   │   │   ├── entities/         # Content, Author, Tweet, User, Batch, Job
+│   │   │   │   ├── repositories/     # Repository interfaces (IContentRepo, ITweetRepo)
+│   │   │   │   └── services/         # Domain services, OCR/captioning interfaces
+│   │   │   ├── application/          # Use cases and orchestration
+│   │   │   │   └── services/         # ContentOrchestration, AutomationOrchestrator, etc.
+│   │   │   ├── infrastructure/       # External service implementations
+│   │   │   │   ├── automation/       # Human behavior simulation (mouse, typing)
+│   │   │   │   ├── browser/          # Playwright provider with stealth
+│   │   │   │   ├── image-captioning/ # BLIP, Google Vision, OpenAI Vision adapters
+│   │   │   │   ├── llm/             # Groq, OpenRouter, Ollama, OpenAI providers
+│   │   │   │   ├── ocr/             # Tesseract, Google Vision adapters
+│   │   │   │   ├── persistence/      # MongoDB repositories, schemas, mappers
+│   │   │   │   ├── queue/           # BullMQ queues and stage-specific workers
+│   │   │   │   └── registry/        # Platform registry (adapter discovery)
+│   │   │   ├── adapters/            # Platform-specific implementations
+│   │   │   │   └── twitter/          # Scraper, authenticator, action executor, selectors
+│   │   │   └── api/                  # REST layer
+│   │   │       ├── controllers/      # 11 controllers
+│   │   │       ├── routes/           # Route factories with DI
+│   │   │       ├── validators/       # Zod request schemas
+│   │   │       └── dto/             # Data transfer objects
+│   │   ├── shared/                   # Cross-cutting concerns
+│   │   └── __tests__/               # Endpoint integration tests (Supertest)
+│   ├── docs/                         # Technical documentation
+│   └── jest.config.js
+└── chrome-extension/                 # Manifest V3 content scraper
+    └── src/                          # Content script, background worker
+```
 
-1. Build/serve the API first so the extension has somewhere to push data.
-2. In Chrome visit `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the `chrome-extension` folder.
-3. Open `https://x.com/home`, make sure you are logged in.
+## API Endpoints
 
-The content script will:
+### Health & Monitoring
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Service health with DB/Redis status |
+| GET | `/readiness` | Kubernetes readiness probe |
+| GET | `/liveness` | Kubernetes liveness probe |
+| GET | `/metrics` | Prometheus metrics |
 
-- injects a floating “Timeline Harvester: ON/OFF” pill in the bottom-right corner so you can enable or disable the auto-scroll/scrape loop on demand (OFF by default),
-- every 20 seconds (while ON), scrolls the feed and scans for `article[data-testid="tweet"]` elements,
-- inject an `extensionId` attribute into each tweet it touches (used for deduplication/targeting),
-- capture the tweet text, author display name & handle, url (if found) and a scrape timestamp,
-- collect attached media (image URLs, video streams, and GIFs) and attach them to the payload,
-- capture engagement metrics (likes, replies, reposts, and views whenever available),
-- (optional future enhancement) it can hover over account names to trigger popovers; this behavior is currently disabled until a reliable approach is finalised,
-- send only the unseen tweets to the service worker which relays them to `http://localhost:4000/tweets` (avoids mixed-content/CORS issues, and the API always responds immediately, even when nothing new was sent).
+### Authentication
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/auth/register` | - | Register new user |
+| POST | `/auth/login` | - | Login, returns JWT pair |
+| POST | `/auth/refresh` | - | Refresh access token |
+| GET | `/auth/me` | JWT | Get current user profile |
+| POST | `/auth/logout` | JWT | Logout |
 
-Check the API console or `GET /tweets` to confirm data is flowing. Update `API_ENDPOINT` inside `chrome-extension/src/background.js` if you expose the backend elsewhere.
+### Content Ingestion (Chrome Extension)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/ingestion/tweets` | Batch ingest tweets (Zod validated) |
+| GET | `/ingestion/stats` | Ingestion statistics |
+| GET | `/session/can-start` | Check session cooldown |
+| POST | `/session/reset` | Reset session lock |
+
+### Content Pipeline (API v1)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/content/scrape` | Scrape single platform |
+| POST | `/api/v1/content/scrape-multiple` | Scrape multiple platforms |
+| GET | `/api/v1/content/:id` | Get content by ID |
+| GET | `/api/v1/content/by-stage/:status` | Filter by pipeline stage |
+| PUT | `/api/v1/content/status` | Batch update statuses |
+| GET | `/api/v1/content/statistics` | Pipeline statistics |
+
+### Automation
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/automation/execute` | Execute engagement actions |
+| POST | `/api/v1/automation/execute-multiple` | Multi-platform execution |
+| POST | `/api/v1/automation/execute-action` | Execute specific action type |
+| GET | `/api/v1/automation/preview` | Dry run preview |
+
+### Platform Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/platforms` | List registered platforms |
+| GET | `/api/v1/platforms/health` | Platform health checks |
+| GET | `/api/v1/platforms/capabilities` | Platform capabilities |
+| POST | `/api/v1/platforms/:id/browser/init` | Initialize browser session |
+| POST | `/api/v1/platforms/:id/auth/authenticate` | Platform authentication |
+
+*Plus 21 additional endpoints for users, tweets, analytics, OCR, image captioning, and browser session management.*
+
+## Content Processing Pipeline
+
+```
+Ingestion ──► OCR ──► Image Captioning ──► Categorization ──► Ranking ──► Action ──► Engagement
+   │           │            │                    │              │           │            │
+ Batch      Tesseract    BLIP/GPT-4V         LLM-based      Scoring    Determine    Playwright
+ Dedup      on media     on images           classification   algorithm  like/reply   with stealth
+ MongoDB    images       alt-text                                        /retweet    human behavior
+```
+
+Each stage is a BullMQ worker with configurable concurrency. Content moves through statuses:
+`pending_ocr` → `pending_image_captioning` → `pending_categorization` → `pending_ranking` → `pending_action` → `queued_for_engagement` → `engaging` → `engaged`
+
+## Getting Started
+
+### Prerequisites
+- Node.js >= 20.0.0
+- MongoDB (local or Atlas)
+- Redis
+
+### Quick Start
+```bash
+cd api
+npm install
+cp .env.example .env    # Configure your environment
+npm run dev             # Start with hot reload
+```
+
+### Environment Setup
+See `api/.env.example` for all configuration options including:
+- MongoDB/Redis connection strings
+- JWT secrets
+- LLM provider configuration (Groq, OpenRouter, Ollama, OpenAI)
+- OCR and image captioning provider selection
+- Queue concurrency settings
+
+## Testing
+
+```bash
+cd api
+npm test                # Run all 405 tests
+npm run test:endpoints  # Run 66 endpoint integration tests
+npm run test:core       # Run domain/core unit tests
+npm run typecheck       # TypeScript type checking (0 errors)
+```
+
+**Test coverage:** 405 tests across 25 suites covering domain logic, value objects, service orchestration, and HTTP endpoint integration.
+
+## Key Technical Decisions
+
+- **Clean Architecture layering** enforces dependency inversion - infrastructure depends on domain, never the reverse
+- **Platform Adapter pattern** makes adding new social platforms a matter of implementing 5 interfaces (scraper, normalizer, authenticator, action executor, rate limiter)
+- **BullMQ pipeline** with per-stage workers allows independent scaling and retry policies for each processing step
+- **Zod validation** at API boundaries with typed DTOs provides runtime safety without runtime overhead in domain logic
+- **Stealth automation** uses Playwright with human behavior simulation (mouse curves, typing delays, scroll patterns) to avoid detection
+- **Multi-provider LLM support** with factory pattern allows switching between Groq, OpenRouter, Ollama, and OpenAI without code changes
+- **JWT dual-token auth** with access/refresh token rotation for secure session management
+
+## License
+
+MIT
